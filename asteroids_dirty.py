@@ -11,6 +11,7 @@ class Settings(object):
     path_file = os.path.dirname(os.path.abspath(__file__))
     path_image = os.path.join(path_file, "images")
     title = "Raumschiff"
+    fps = 60
     small_size = (20, 20)
     medium_size = (40, 40)
     big_size = (80, 80)
@@ -37,7 +38,7 @@ class Timer(object):
         if self.duration < 0:
             self.duration = 0
 
-class Space_Ship(pygame.sprite.Sprite):
+class Space_Ship(pygame.sprite.DirtySprite):
     def __init__(self, filename) -> None:
         super().__init__()
         self.image_orig = pygame.image.load(os.path.join(Settings.path_image, filename)).convert_alpha()
@@ -49,10 +50,11 @@ class Space_Ship(pygame.sprite.Sprite):
         self.rotation = 0
         self.speed_x = 0
         self.speed_y = 0
+        self.dirty = 1
     #Bewegen des Spielers
     def update(self):
-
         self.rect.move_ip((self.speed_x, self.speed_y))
+        self.dirty = 1
 
         if self.rect.top >= Settings.window_height:
             self.rect.bottom = 1
@@ -64,6 +66,7 @@ class Space_Ship(pygame.sprite.Sprite):
             self.rect.left = Settings.window_width
 
     def move(self):
+        self.dirty = 1
         if round(self.speed_x - sin(radians(self.rotation)), 0) <= 10:
             if round(self.speed_x - sin(radians(self.rotation)), 0) >= -10:
                 self.speed_x = round(self.speed_x - sin(radians(self.rotation)), 0)
@@ -79,6 +82,7 @@ class Space_Ship(pygame.sprite.Sprite):
         self.image = pygame.transform.rotate(self.image_orig, self.rotation)
         self.rect = self.image.get_rect()
         self.rect.center = c
+        self.dirty = 1
     
     def rotate_left(self):
         if self.rotation == 360:
@@ -88,11 +92,12 @@ class Space_Ship(pygame.sprite.Sprite):
         self.image = pygame.transform.rotate(self.image_orig, self.rotation)
         self.rect = self.image.get_rect()
         self.rect.center = c
+        self.dirty = 1
 
     def draw(self, screen):
         screen.blit(self.image, self.rect)
     
-class Laser(pygame.sprite.Sprite):
+class Laser(pygame.sprite.DirtySprite):
     def __init__(self, filename, ship) -> None:
         super().__init__()
         self.image_orig = pygame.image.load(os.path.join(Settings.path_image, filename)).convert_alpha()
@@ -104,16 +109,18 @@ class Laser(pygame.sprite.Sprite):
         self.laser_time = Timer(5000)
         self.speed_x = round(ship.speed_x - sin(radians(ship.rotation)), 0)
         self.speed_y = round(ship.speed_y - cos(radians(ship.rotation)), 0)
+        self.dirty = 1
     
     def update(self):
         self.rect.move_ip((self.speed_x, self.speed_y))
+        self.dirty = 1
         if self.laser_time.is_next_stop_reached():
             self.kill()
     
     def draw(self, screen):
         screen.blit(self.image, self.rect)
 
-class Asteroids(pygame.sprite.Sprite):
+class Asteroids(pygame.sprite.DirtySprite):
     def __init__(self, filename, size) -> None:
         super().__init__()
         self.image_orig = pygame.image.load(os.path.join(Settings.path_image, filename)).convert_alpha()
@@ -125,18 +132,24 @@ class Asteroids(pygame.sprite.Sprite):
         self.rect.centery = randint((size[1]//2), Settings.window_height - (size[1]//2))
         self.speed_x = randint(-1, 1)
         self.speed_y = randint(-1, 1)
+        self.dirty = 1
     
     def update(self):
         self.rect.move_ip((self.speed_x, self.speed_y))
+        self.dirty = 1
 
         if self.rect.top >= Settings.window_height:
             self.rect.bottom = 1
+            self.dirty = 1
         if self.rect.bottom <= 0:
             self.rect.top = Settings.window_height
+            self.dirty = 1
         if self.rect.left >= Settings.window_width:
             self.rect.right = 1
+            self.dirty = 1
         if self.rect.right <= 0:
             self.rect.left = Settings.window_width
+            self.dirty = 1
     
     def draw(self, screen):
         screen.blit(self.image, self.rect)
@@ -148,17 +161,20 @@ class Game(object):
         self.screen = pygame.display.set_mode((Settings.window_width, Settings.window_height))
         pygame.display.set_caption(Settings.title)
         self.clock = pygame.time.Clock()
-        self.space_ships_group = pygame.sprite.Group()
+        self.space_ships_group = pygame.sprite.LayeredDirty()
         self.space_ship = Space_Ship('ship0.png')
         self.space_ships_group.add(self.space_ship)
-        self.asteroid_big_group = pygame.sprite.Group()
-        self.laser_group = pygame.sprite.Group()
+        self.asteroid_big_group = pygame.sprite.LayeredDirty()
+        self.laser_group = pygame.sprite.LayeredDirty()
         self.big_timer = Timer(3000)
         self.running = True
+        self.space_ships_group.set_timing_treshold(1000/Settings.fps)
+        self.asteroid_big_group.set_timing_treshold(1000/Settings.fps)
+        self.laser_group.set_timing_treshold(1000/Settings.fps)
 
     def run(self):
         while self.running:
-            self.clock.tick(60)
+            self.clock.tick(Settings.fps)
             self.watch_for_events()
             self.obstecles()
             self.update()
@@ -170,16 +186,25 @@ class Game(object):
             if event.type == pygame.KEYDOWN:        
                 if event.key == pygame.K_ESCAPE:   
                     self.running = False
-                if event.key == pygame.K_RIGHT:         
-                    self.space_ship.rotate_right()
-                if event.key == pygame.K_LEFT:         
-                    self.space_ship.rotate_left()
+                #if event.key == pygame.K_RIGHT:         #langsame Version
+                    #self.space_ship.rotate_right()
+                #if event.key == pygame.K_LEFT:         
+                    #self.space_ship.rotate_left()
                 if event.key == pygame.K_UP:         
                     self.space_ship.move()
                 if event.key == pygame.K_SPACE:         
                     self.fire()
             elif event.type == pygame.QUIT:         
                 self.running = False   
+        press = pygame.key.get_pressed()      #scnelle Version
+        #if press[pygame.K_UP]:
+            #self.space_ship.move()
+        if press[pygame.K_RIGHT]:
+            self.space_ship.rotate_right()
+        if press[pygame.K_LEFT]:
+            self.space_ship.rotate_left()
+        #if press[pygame.K_SPACE]:
+            #self.fire()
     
     def fire(self):
         if len(self.laser_group) < 10:
@@ -213,10 +238,10 @@ class Game(object):
         
     def draw(self):
         self.screen.fill((0, 0, 0))
-        self.space_ship.draw(self.screen)
-        self.laser_group.draw(self.screen)
-        self.asteroid_big_group.draw(self.screen)
-        pygame.display.flip()
+        pygame.display.update(self.space_ships_group.draw(self.screen))
+        pygame.display.update(self.laser_group.draw(self.screen))
+        pygame.display.update(self.asteroid_big_group.draw(self.screen))
+        #pygame.display.flip()
 
 
 
